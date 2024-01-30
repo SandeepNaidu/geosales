@@ -5,7 +5,7 @@ from shapely.geometry import Point, Polygon
 from streamlit_folium import folium_static
 import requests
 from geopy.distance import geodesic
-
+import pandas as pd
 
 # Function to create concentric circles
 def create_circles(lat, lon, radius_list):
@@ -83,53 +83,80 @@ def get_marker_color(radius):
     else:
         return 'red'
 
+def generate_csv_data(places_data):
+    csv_data = []
+    for radius, places in places_data.items():
+        for place, distance, (place_lat, place_lon) in places:
+            google_maps_link = f"https://www.google.com/maps?q={place_lat},{place_lon}"
+            csv_data.append([place, distance, place_lat, place_lon, google_maps_link])
+    return pd.DataFrame(csv_data, columns=['Place Name', 'Distance (km)', 'Latitude', 'Longitude', 'Google Maps Link'])
+
+
+
 # Streamlit App Layout
 st.title("Geofencing Visualization Tool")
 
-# User input for latitude and longitude
-lat = st.number_input('Latitude', value=16.56467, format="%.5f")
-lon = st.number_input('Longitude', value=78.11582, format="%.5f")
+# Sidebar for input controls
+with st.sidebar:
+    st.title("Input Controls")
+    lat = st.number_input('Latitude', value=16.56467, format="%.5f")
+    lon = st.number_input('Longitude', value=78.11582, format="%.5f")
+    radius_input = st.text_input('Enter radii (in km) separated by commas', '5,15,30,50')
+    update_button = st.button('Update Map')
 
-# User input for radius list
-radius_input = st.text_input('Enter radii (in km) separated by commas', '5,15,30,50')
 radius_list = [int(r.strip()) for r in radius_input.split(',')]
-
-# Initialize map
-m = folium.Map(location=[lat, lon], zoom_start=10)
-
-# Create and add circles to the map
-circles = create_circles(lat, lon, radius_list)
-for circle in circles:
-    circle.add_to(m)
-
-existing_places = set()  # To keep track of places already processed
-
-# Collect data for all radii
 places_data = {}
-existing_places = set()
-for radius in radius_list:
-    places_within_radius = get_places_within_radius(lat, lon, radius, existing_places)
-    places_data[radius] = places_within_radius
+
+firsttime = True
+
+if firsttime or update_button:
+    firsttime=False
+    # Initialize map
+    m = folium.Map(location=[lat, lon], zoom_start=10)
+
+    # Create and add circles to the map
+    circles = create_circles(lat, lon, radius_list)
+    for circle in circles:
+        circle.add_to(m)
+
+    existing_places = set()  # To keep track of places already processed
+
+    # Collect data for all radii
+    existing_places = set()
+    for radius in radius_list:
+        places_within_radius = get_places_within_radius(lat, lon, radius, existing_places)
+        places_data[radius] = places_within_radius
 
 
-# Add circle markers for each place
-for radius, places in places_data.items():
-    marker_color = get_marker_color(radius)
-    for place, distance, (place_lat, place_lon) in places:
-        folium.CircleMarker(
-            location=[place_lat, place_lon],
-            radius=3,  # Small fixed radius for the marker
-            color=marker_color,
-            fill=True,
-            fill_color=marker_color,
-            fill_opacity=0.7,
-            popup=f"{place} ({distance} km)"
-        ).add_to(m)
+    # Add circle markers for each place
+    for radius, places in places_data.items():
+        marker_color = get_marker_color(radius)
+        for place, distance, (place_lat, place_lon) in places:
+            folium.CircleMarker(
+                location=[place_lat, place_lon],
+                radius=3,  # Small fixed radius for the marker
+                color=marker_color,
+                fill=True,
+                fill_color=marker_color,
+                fill_opacity=0.7,
+                popup=f"{place} ({distance} km)"
+            ).add_to(m)
 
-# Display the places
-display_places_with_style(places_data)
+    # Display the places
+    display_places_with_style(places_data)
 
-# Display the map
-folium_static(m)
+    # Display the map
+    folium_static(m)
+
+    # Button to download CSV
+    with st.sidebar:
+        df_to_export = generate_csv_data(places_data)
+        st.download_button(
+            label="Download CSV",
+            data=df_to_export.to_csv(index=False).encode('utf-8'),
+            file_name='geofenced_places.csv',
+            mime='text/csv'
+        )
+
 
 
