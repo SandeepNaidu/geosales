@@ -46,7 +46,7 @@ def get_places_within_radius(lat, lon, radius, existing_places):
         if place_name not in existing_places:
             place_coords = (element['lat'], element['lon'])
             distance = geodesic(center_point, place_coords).kilometers
-            new_places.append((place_name, round(distance, 2)))
+            new_places.append((place_name, round(distance, 2),place_coords))
             existing_places.add(place_name)
     
     return new_places
@@ -73,7 +73,15 @@ def display_places_with_style(places_data):
                         place_text = styled_html(f"{place[0]} ({place[1]} km)", "green", "15px")
                         st.markdown(place_text, unsafe_allow_html=True)
 
-
+def get_marker_color(radius):
+    if radius <= 5:
+        return 'green'
+    elif radius <= 15:
+        return 'blue'
+    elif radius <= 30:
+        return 'orange'
+    else:
+        return 'red'
 
 # Streamlit App Layout
 st.title("Geofencing Visualization Tool")
@@ -103,6 +111,22 @@ for radius in radius_list:
     places_within_radius = get_places_within_radius(lat, lon, radius, existing_places)
     places_data[radius] = places_within_radius
 
+
+# Add circle markers for each place
+for radius, places in places_data.items():
+    marker_color = get_marker_color(radius)
+    for place, distance, (place_lat, place_lon) in places:
+        folium.CircleMarker(
+            location=[place_lat, place_lon],
+            radius=3,  # Small fixed radius for the marker
+            color=marker_color,
+            fill=True,
+            fill_color=marker_color,
+            fill_opacity=0.7,
+            popup=f"{place} ({distance} km)"
+        ).add_to(m)
+
+# Display the places
 display_places_with_style(places_data)
 
 # Display the map
