@@ -7,6 +7,9 @@ import requests
 from geopy.distance import geodesic
 import pandas as pd
 
+# Assuming you have your Google API Key
+google_api_key = "AIzaSyDpFk_tDUpOGVcGfkuI835XlCSmH3PZzoc"  # Replace with your actual Google API Key
+
 # Function to create concentric circles
 def create_circles(lat, lon, radius_list):
     circles = []
@@ -21,9 +24,29 @@ def create_circles(lat, lon, radius_list):
         circles.append(circle)
     return circles
 
-# Function to get place names within a geofence (this is a placeholder)
+# Function to get route distance using Google Maps Directions API
+def get_route_distance(lat1, lon1, lat2, lon2, api_key):
+    endpoint = "https://maps.googleapis.com/maps/api/directions/json"
+    params = {
+        "origin": f"{lat1},{lon1}",
+        "destination": f"{lat2},{lon2}",
+        "key": api_key,
+    }
+    response = requests.get(endpoint, params=params)
+    directions = response.json()
+    if directions["routes"]:
+        # Initialize shortest_distance with a very high value
+        shortest_distance = float('inf')
+        for route in directions["routes"]:
+            distance = route["legs"][0]["distance"]["value"]  # Distance in meters
+            if distance < shortest_distance:
+                shortest_distance = distance
+        return shortest_distance / 1000  # Convert to kilometers and return
+    else:
+        return None
+
+# Function to get place names within a geofence
 def get_places_within_radius(lat, lon, radius, existing_places):
-    # Constructing the Overpass QL query
     overpass_url = "http://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json];
@@ -34,21 +57,19 @@ def get_places_within_radius(lat, lon, radius, existing_places):
     );
     out;
     """
-    
-    # Sending the request and parsing the response
     response = requests.get(overpass_url, params={'data': overpass_query})
     data = response.json()
-    
     new_places = []
     center_point = (lat, lon)
     for element in data['elements']:
         place_name = element.get('tags', {}).get('name', 'Unknown')
+        place_coords = (element['lat'], element['lon'])
         if place_name not in existing_places:
-            place_coords = (element['lat'], element['lon'])
-            distance = geodesic(center_point, place_coords).kilometers
-            new_places.append((place_name, round(distance, 2),place_coords))
-            existing_places.add(place_name)
-    
+            # Use Google Maps API for distance
+            distance = get_route_distance(lat, lon, place_coords[0], place_coords[1], google_api_key)
+            if distance is not None:  # Check if distance was successfully fetched
+                new_places.append((place_name, round(distance, 2), place_coords))
+                existing_places.add(place_name)
     return new_places
 
 def styled_html(text, color, size):
@@ -57,19 +78,14 @@ def styled_html(text, color, size):
 def display_places_with_style(places_data):
     for radius, places in places_data.items():
         places.sort(key=lambda x: x[1])
-
-        # Use HTML for headers
         radius_header = styled_html(f"Places within {radius} km radius", "blue", "20px")
         st.markdown(radius_header, unsafe_allow_html=True)
-
         with st.expander("See places", expanded=True):
             cols = st.columns(4)
             per_column = len(places) // 4 + (len(places) % 4 > 0)
-
             for i, column in enumerate(cols):
                 with column:
                     for place in places[i * per_column:(i + 1) * per_column]:
-                        # Style each place name
                         place_text = styled_html(f"{place[0]} ({place[1]} km)", "green", "15px")
                         st.markdown(place_text, unsafe_allow_html=True)
 
@@ -88,8 +104,9 @@ def generate_csv_data(places_data):
     for radius, places in places_data.items():
         for place, distance, (place_lat, place_lon) in places:
             google_maps_link = f"https://www.google.com/maps?q={place_lat},{place_lon}"
-            csv_data.append([place, distance, place_lat, place_lon, google_maps_link])
-    return pd.DataFrame(csv_data, columns=['Place Name', 'Distance (km)', 'Latitude', 'Longitude', 'Google Maps Link'])
+            csv_data.append([place, distance, place_lat, place_lon])
+    return pd.DataFrame(csv_data, columns=['Place Name', 'Distance (km)', 'Latitude','Longitude'])
+
 
 
 
